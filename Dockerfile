@@ -24,7 +24,10 @@ RUN pip install --upgrade pip \
        openai \ 
        tiktoken \ 
        pygments \
-       "unstructured[pdf]"
+       "unstructured[pdf]" \
+       faiss-cpu \
+       sse_starlette \
+       langserve
 
 
 # Setup environment
