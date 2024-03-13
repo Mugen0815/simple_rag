@@ -1,13 +1,8 @@
 version: '3'
 services:
   app:
-#    image: python:3.10
     build:
       context: .
-#    ports:
-#      - 8000:8000
-    #volumes:
-    #  - ./mount:/app
     command: tail -f /dev/null
     environment:
       - DATA_PATH=${DATA_PATH}
