@@ -3,7 +3,7 @@
 from operator import itemgetter
 from typing import List, Tuple
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI, Request, Response
 from langchain_openai import ChatOpenAI
 from langchain_openai import OpenAIEmbeddings
 from langchain.prompts import ChatPromptTemplate
@@ -16,6 +16,7 @@ from langchain_community.vectorstores import FAISS
 from langserve import add_routes
 from langserve.pydantic_v1 import BaseModel, Field
 import os
+from langchain.vectorstores.chroma import Chroma
 
 CHROMA_PATH = "chroma"
 DATA_PATH = os.environ.get('DATA_PATH')
@@ -61,7 +62,12 @@ def _format_chat_history(chat_history: List[Tuple]) -> str:
 vectorstore = FAISS.from_texts(
     ["harrison worked at kensho"], embedding=OpenAIEmbeddings(openai_api_key=OPENAI_API_KEY)
 )
-retriever = vectorstore.as_retriever()
+retriever2 = vectorstore.as_retriever()
+
+embedding_function = OpenAIEmbeddings(openai_api_key=OPENAI_API_KEY)
+db = Chroma(persist_directory=CHROMA_PATH, embedding_function=embedding_function)
+retriever = db.as_retriever()
+
 
 _inputs = RunnableMap(
     standalone_question=RunnablePassthrough.assign(
@@ -93,6 +99,12 @@ conversational_qa_chain = (
 )
 chain = conversational_qa_chain.with_types(input_type=ChatHistory)
 
+model = ChatOpenAI(openai_api_key=OPENAI_API_KEY)
+prompt = ChatPromptTemplate.from_template("Give me a summary about {topic} in a paragraph or less.")
+chain2 = prompt | model
+chain3 = ChatOpenAI(openai_api_key=OPENAI_API_KEY) | StrOutputParser()
+
+
 app = FastAPI(
     title="LangChain Server",
     version="1.0",
@@ -102,7 +114,26 @@ app = FastAPI(
 # /invoke
 # /batch
 # /stream
-add_routes(app, chain, enable_feedback_endpoint=True)
+add_routes(app, chain, path="/chat", enable_feedback_endpoint=True) # results in /chat/invoke, /chat/batch, /chat/stream
+
+add_routes(app, chain2, path="/chat2", enable_feedback_endpoint=False) # results in
+add_routes(app, chain3, path="/chat3", enable_feedback_endpoint=False) # results in
+
+
+@app.post("/completion", include_in_schema=False)
+async def simple_invoke(request: Request) -> Response:
+    """Handle a request."""
+    requestbody = await request.json()
+    topic = requestbody.get('topic')
+    if topic:
+        text_to_summarize = f"Give me a summary about {topic} in a paragraph or less."
+        result = model.invoke(text_to_summarize)
+    else:
+        result = "No topic provided"
+    
+    return result
+
+
 
 if __name__ == "__main__":
     import uvicorn
